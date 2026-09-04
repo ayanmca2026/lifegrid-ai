@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from '
 import axios from 'axios';
 import L from 'leaflet';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
 
 // Custom Offline-Ready DivIcons
 const createDivIcon = (emoji, bgClass, borderClass = 'border-white') => {
@@ -79,7 +79,11 @@ export default function Dashboard() {
 
         let reconnectTimer;
         const connectWebSocket = () => {
-            const ws = new WebSocket('ws://localhost:8000/ws/realtime');
+            const defaultWs = window.location.protocol === 'https:' 
+                ? `wss://${window.location.hostname}:8000/ws/realtime` 
+                : 'ws://localhost:8000/ws/realtime';
+            const wsUrl = import.meta.env.VITE_WS_URL || defaultWs;
+            const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 
             ws.onopen = () => {
