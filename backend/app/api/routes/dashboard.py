@@ -5,14 +5,18 @@ from app.models.ambulance import Ambulance
 from app.models.incident import Incident
 from app.models.route import Route
 from app.models.hospital import Hospital
+from app.models.signal import Signal
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 @router.get("/stats")
 def get_dashboard_stats(db: Session = Depends(get_db)):
     active_ambulances = db.query(Ambulance).filter(Ambulance.status == "EN_ROUTE").count()
+    total_ambulances = db.query(Ambulance).count()
     active_incidents = db.query(Incident).filter(Incident.status == "ACTIVE").count()
     active_routes = db.query(Route).filter(Route.route_status == "ACTIVE").all()
+    hospitals_ready = db.query(Hospital).filter(Hospital.status == "AVAILABLE").count()
+    signals_prioritized = db.query(Signal).filter(Signal.priority_status == True).count()
     
     avg_eta = 0.0
     if active_routes:
@@ -23,9 +27,12 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
     return {
         "active_ambulances": active_ambulances,
+        "total_ambulances": total_ambulances,
         "active_emergencies": len(active_routes),
         "active_incidents": active_incidents,
+        "hospitals_ready": hospitals_ready,
         "green_corridors": green_corridors,
+        "signals_prioritized": signals_prioritized,
         "avg_eta": avg_eta,
         "time_saved": time_saved,
         "system_status": "ONLINE",

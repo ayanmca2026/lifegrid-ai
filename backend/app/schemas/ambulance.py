@@ -20,6 +20,8 @@ class AmbulanceUpdate(BaseModel):
     longitude: Optional[float] = None
     status: Optional[str] = None
     current_eta: Optional[float] = None
+    speed: Optional[float] = None
+    distance_km: Optional[float] = None
 
 class Ambulance(AmbulanceBase):
     id: int
