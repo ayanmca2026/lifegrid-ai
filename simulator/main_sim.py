@@ -8,14 +8,27 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api")
 # State tracker for waypoint interpolation: {amb_id: {"idx": int, "sub": float, "last_route_id": int}}
 amb_progress = {}
 
+def get_distance(lat1, lon1, lat2, lon2):
+    return math.sqrt((lat2 - lat1)**2 + (lon2 - lon1)**2) * 111.0
+
+def calculate_remaining_distance(coords, curr_idx, curr_lat, curr_lng):
+    if not coords or curr_idx >= len(coords):
+        return 0.0
+    dist = get_distance(curr_lat, curr_lng, coords[curr_idx]["lat"], coords[curr_idx]["lng"])
+    for i in range(curr_idx, len(coords) - 1):
+        dist += get_distance(coords[i]["lat"], coords[i]["lng"], coords[i+1]["lat"], coords[i+1]["lng"])
+    return round(dist, 2)
+
 def simulate_loop():
     print(f"Starting LIFEGRID AI Simulation Loop connected to {API_URL}...")
+    step_counter = 0
     while True:
         try:
+            step_counter += 1
             # 1. Fetch all ambulances
             resp = requests.get(f"{API_URL}/ambulances", timeout=3)
             if resp.status_code != 200:
-                time.sleep(2)
+                time.sleep(1.5)
                 continue
 
             ambulances = resp.json()
@@ -47,8 +60,8 @@ def simulate_loop():
                     idx = prog["idx"]
                     sub = prog["sub"]
 
-                    # Move forward along the waypoint segment
-                    sub += 0.25  # 4 sub-steps per segment for smooth visual progression
+                    # Move forward along the waypoint segment (4 sub-steps per segment)
+                    sub += 0.25
                     if sub >= 1.0:
                         idx += 1
                         sub = 0.0
@@ -60,14 +73,16 @@ def simulate_loop():
                     if idx >= total_segments:
                         # Reached target hospital destination!
                         dest = coords[-1]
-                        print(f"Ambulance {amb['vehicle_number']} reached destination hospital!")
+                        print(f"Ambulance {amb['vehicle_number']} arrived at destination hospital!")
                         requests.patch(
                             f"{API_URL}/ambulances/{amb_id}/location",
                             json={
                                 "latitude": dest["lat"],
                                 "longitude": dest["lng"],
                                 "status": "IDLE",
-                                "current_eta": 0.0
+                                "current_eta": 0.0,
+                                "speed": 0.0,
+                                "distance_km": 0.0
                             },
                             timeout=3
                         )
@@ -81,24 +96,27 @@ def simulate_loop():
                         progress_pct = min(99.0, max(1.0, ((idx + sub) / total_segments) * 100))
                         initial_eta = prog.get("initial_eta", 8.0)
                         remaining_eta = max(0.5, round(initial_eta * (1.0 - progress_pct / 100.0), 1))
+                        
+                        # Dynamic realistic speed calculation (45-55 km/h)
+                        speed = round(48.0 + 4.0 * math.sin(step_counter * 0.5), 1)
+                        dist_rem = calculate_remaining_distance(coords, idx + 1, curr_lat, curr_lng)
 
                         requests.patch(
                             f"{API_URL}/ambulances/{amb_id}/location",
                             json={
                                 "latitude": curr_lat,
                                 "longitude": curr_lng,
-                                "current_eta": remaining_eta
+                                "current_eta": remaining_eta,
+                                "speed": speed,
+                                "distance_km": dist_rem
                             },
                             timeout=3
                         )
                 else:
-                    # Clean up if not en route
                     if amb_id in amb_progress:
                         del amb_progress[amb_id]
 
         except Exception as e:
-            # print error without crashing simulation loop
-            # print(f"Simulator warning: {e}")
             pass
 
         time.sleep(1.5)
