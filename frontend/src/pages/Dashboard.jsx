@@ -587,7 +587,7 @@ export default function Dashboard() {
                                 streetViewControl={false}
                                 fullscreenControl={true}
                                 styles={darkMapStyle}
-                                mapId=""
+                                mapId="DEMO_MAP_ID"
                                 style={{ width: '100%', height: '100%' }}
                             >
                                 {/* Road Network Polylines */}
