@@ -1,27 +1,85 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from 'react-leaflet';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import axios from 'axios';
-import L from 'leaflet';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-// Custom Offline-Ready DivIcons
-const createDivIcon = (emoji, bgClass, borderClass = 'border-white') => {
-    return L.divIcon({
-        html: `<div class="${bgClass} text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-xl border-2 ${borderClass} text-sm transform hover:scale-125 transition-transform duration-200">${emoji}</div>`,
-        className: '',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -18]
-    });
-};
+// Dark command-center map style (matches CARTO dark_all aesthetic)
+const darkMapStyle = [
+    { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+    { elementType: 'labels.text.stroke', stylers: [{ color: '#0f172a' }] },
+    { elementType: 'labels.text.fill', stylers: [{ color: '#64748b' }] },
+    { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#1e293b' }] },
+    { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
+    { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
+    { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#475569' }] },
+    { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#0f2027' }] },
+    { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#3b5249' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1e293b' }] },
+    { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#0f172a' }] },
+    { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#64748b' }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#334155' }] },
+    { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#1e293b' }] },
+    { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
+    { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#1e293b' }] },
+    { featureType: 'transit.station', elementType: 'labels.text.fill', stylers: [{ color: '#475569' }] },
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0c1425' }] },
+    { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#334155' }] },
+    { featureType: 'water', elementType: 'labels.text.stroke', stylers: [{ color: '#0f172a' }] }
+];
 
-const ambulanceIcon = createDivIcon('🚑', 'bg-cyan-500 animate-pulse', 'border-cyan-200');
-const ambulanceIdleIcon = createDivIcon('🚑', 'bg-slate-700', 'border-slate-500');
-const hospitalIcon = createDivIcon('🏥', 'bg-emerald-600', 'border-emerald-200');
-const hospitalFullIcon = createDivIcon('🏥', 'bg-amber-600', 'border-amber-300');
-const incidentAccidentIcon = createDivIcon('💥', 'bg-rose-600 animate-bounce', 'border-rose-300');
-const incidentBlockIcon = createDivIcon('🚧', 'bg-orange-600 animate-pulse', 'border-orange-300');
+// Imperative Polyline component using Google Maps API
+function MapPolyline({ path, strokeColor, strokeWeight, strokeOpacity, dashed }) {
+    const map = useMap();
+    const polylineRef = useRef(null);
+
+    useEffect(() => {
+        if (!map || !path || path.length < 2) {
+            if (polylineRef.current) {
+                polylineRef.current.setMap(null);
+                polylineRef.current = null;
+            }
+            return;
+        }
+
+        const options = {
+            path: path.map(p => ({ lat: p[0], lng: p[1] })),
+            strokeColor: strokeColor || '#06b6d4',
+            strokeWeight: strokeWeight || 4,
+            strokeOpacity: dashed ? 0 : (strokeOpacity || 0.9),
+            map: map
+        };
+
+        if (dashed) {
+            options.icons = [{
+                icon: {
+                    path: 'M 0,-1 0,1',
+                    strokeOpacity: strokeOpacity || 0.8,
+                    strokeWeight: strokeWeight || 4,
+                    scale: 3
+                },
+                offset: '0',
+                repeat: '16px'
+            }];
+        }
+
+        if (polylineRef.current) {
+            polylineRef.current.setOptions(options);
+        } else {
+            polylineRef.current = new google.maps.Polyline(options);
+        }
+
+        return () => {
+            if (polylineRef.current) {
+                polylineRef.current.setMap(null);
+                polylineRef.current = null;
+            }
+        };
+    }, [map, path, strokeColor, strokeWeight, strokeOpacity, dashed]);
+
+    return null;
+}
 
 export default function Dashboard() {
     const [ambulances, setAmbulances] = useState([]);
@@ -40,6 +98,7 @@ export default function Dashboard() {
     const [actionLoading, setActionLoading] = useState(false);
     const [wsConnected, setWsConnected] = useState(false);
     const [liveAlert, setLiveAlert] = useState(null);
+    const [openInfoId, setOpenInfoId] = useState(null);
     const [activityLogs, setActivityLogs] = useState([
         { time: new Date().toLocaleTimeString(), text: 'LIFEGRID AI Command Center initialized', type: 'info' }
     ]);
@@ -401,6 +460,24 @@ export default function Dashboard() {
         return '#10b981'; // Green / Clear
     };
 
+    // Missing API key fallback
+    if (!GOOGLE_MAPS_API_KEY) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-slate-950 text-slate-100">
+                <div className="bg-slate-900 border border-rose-800 p-8 rounded-xl max-w-lg text-center space-y-4">
+                    <div className="text-4xl">🗺️</div>
+                    <h1 className="text-xl font-bold text-rose-400">Google Maps API Key Missing</h1>
+                    <p className="text-sm text-slate-400">
+                        Set <code className="bg-slate-800 px-2 py-0.5 rounded text-cyan-400">VITE_GOOGLE_MAPS_API_KEY</code> in your environment variables.
+                    </p>
+                    <p className="text-xs text-slate-500">
+                        See <code>docs/GOOGLE_MAPS_SETUP.md</code> for instructions.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
             
@@ -499,139 +576,174 @@ export default function Dashboard() {
                     
                     {/* Live Map Box */}
                     <div className="flex-1 bg-slate-900 rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl">
-                        <MapContainer 
-                            center={[12.9680, 77.6200]} 
-                            zoom={13} 
-                            scrollWheelZoom={true} 
-                            style={{ height: '100%', width: '100%', background: '#0f172a' }}
-                        >
-                            <TileLayer
-                                attribution='&copy; CARTO'
-                                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                            />
+                        <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
+                            <Map
+                                defaultCenter={{ lat: 12.968, lng: 77.62 }}
+                                defaultZoom={13}
+                                gestureHandling="greedy"
+                                disableDefaultUI={true}
+                                zoomControl={true}
+                                mapTypeControl={false}
+                                streetViewControl={false}
+                                fullscreenControl={true}
+                                styles={darkMapStyle}
+                                mapId=""
+                                style={{ width: '100%', height: '100%' }}
+                            >
+                                {/* Road Network Polylines */}
+                                {roads.map(r => (
+                                    <MapPolyline
+                                        key={`road-${r.id}`}
+                                        path={[[r.start_lat, r.start_lng], [r.end_lat, r.end_lng]]}
+                                        strokeColor={getRoadColor(r.density, r.risk_score)}
+                                        strokeWeight={4}
+                                        strokeOpacity={0.65}
+                                    />
+                                ))}
 
-                            {/* Road Network with Traffic Colors */}
-                            {roads.map(r => (
-                                <Polyline
-                                    key={`road-${r.id}`}
-                                    positions={[[r.start_lat, r.start_lng], [r.end_lat, r.end_lng]]}
-                                    color={getRoadColor(r.density, r.risk_score)}
-                                    weight={4}
-                                    opacity={0.65}
-                                >
-                                    <Popup>
-                                        <div className="text-xs text-slate-900">
-                                            <strong>{r.name}</strong><br/>
-                                            Congestion: <span className="font-bold">{r.congestion_level}</span> ({Math.round(r.density * 100)}%)<br/>
-                                            Speed Limit: {r.speed_limit} km/h (Avg: {Math.round(r.average_speed || 35)} km/h)
-                                        </div>
-                                    </Popup>
-                                </Polyline>
-                            ))}
+                                {/* Prior Inactive/Blocked Route (Dashed Red) */}
+                                {previousRoute.length > 0 && (
+                                    <MapPolyline
+                                        path={previousRoute}
+                                        strokeColor="#f43f5e"
+                                        strokeWeight={4}
+                                        strokeOpacity={0.8}
+                                        dashed={true}
+                                    />
+                                )}
 
-                            {/* Prior Inactive/Blocked Route (Rendered in Dashed Red) */}
-                            {previousRoute.length > 0 && (
-                                <Polyline
-                                    positions={previousRoute}
-                                    color="#f43f5e"
-                                    weight={4}
-                                    dashArray="8, 8"
-                                    opacity={0.8}
-                                />
-                            )}
+                                {/* Active Green Corridor Polyline (Bright Cyan) */}
+                                {activeRoute.length > 0 && (
+                                    <MapPolyline
+                                        path={activeRoute}
+                                        strokeColor="#06b6d4"
+                                        strokeWeight={6}
+                                        strokeOpacity={0.9}
+                                    />
+                                )}
 
-                            {/* Active Green Corridor Polyline (Bright Cyan) */}
-                            {activeRoute.length > 0 && (
-                                <Polyline
-                                    positions={activeRoute}
-                                    color="#06b6d4"
-                                    weight={6}
-                                    opacity={0.9}
-                                />
-                            )}
+                                {/* Traffic Signals */}
+                                {signals.map(s => {
+                                    let signalColor = '#94a3b8';
+                                    if (s.current_state === 'GREEN') signalColor = '#10b981';
+                                    else if (s.current_state === 'FAILURE') signalColor = '#ef4444';
+                                    else if (s.current_state === 'RED') signalColor = '#f43f5e';
 
-                            {/* Traffic Signals */}
-                            {signals.map(s => {
-                                let signalColor = '#94a3b8';
-                                if (s.current_state === 'GREEN') signalColor = '#10b981';
-                                else if (s.current_state === 'FAILURE') signalColor = '#ef4444';
-                                else if (s.current_state === 'RED') signalColor = '#f43f5e';
+                                    return (
+                                        <AdvancedMarker
+                                            key={`sig-${s.id}`}
+                                            position={{ lat: s.latitude, lng: s.longitude }}
+                                            onClick={() => setOpenInfoId(openInfoId === `sig-${s.id}` ? null : `sig-${s.id}`)}
+                                        >
+                                            <div
+                                                className={`rounded-full ${s.priority_status ? 'w-4 h-4 border-2 border-white shadow-lg' : 'w-3 h-3 border border-slate-600'}`}
+                                                style={{ backgroundColor: signalColor }}
+                                                aria-label={`Traffic signal ${s.intersection_name}: ${s.current_state}`}
+                                            />
+                                            {openInfoId === `sig-${s.id}` && (
+                                                <InfoWindow
+                                                    position={{ lat: s.latitude, lng: s.longitude }}
+                                                    onCloseClick={() => setOpenInfoId(null)}
+                                                >
+                                                    <div className="text-xs text-slate-900 p-1">
+                                                        <strong>{s.intersection_name}</strong><br/>
+                                                        Status: {s.current_state}<br/>
+                                                        Priority Mode: {s.priority_status ? '🟢 GREEN CORRIDOR ACTIVE' : '⚪ NORMAL'}
+                                                    </div>
+                                                </InfoWindow>
+                                            )}
+                                        </AdvancedMarker>
+                                    );
+                                })}
 
-                                return (
-                                    <CircleMarker
-                                        key={`sig-${s.id}`}
-                                        center={[s.latitude, s.longitude]}
-                                        radius={s.priority_status ? 7 : 5}
-                                        fillColor={signalColor}
-                                        color={s.priority_status ? '#ffffff' : '#475569'}
-                                        weight={s.priority_status ? 2 : 1}
-                                        fillOpacity={0.9}
+                                {/* Hospitals */}
+                                {hospitals.map(h => (
+                                    <AdvancedMarker
+                                        key={`hosp-${h.id}`}
+                                        position={{ lat: h.latitude, lng: h.longitude }}
+                                        onClick={() => setOpenInfoId(openInfoId === `hosp-${h.id}` ? null : `hosp-${h.id}`)}
                                     >
-                                        <Popup>
-                                            <div className="text-xs text-slate-900">
-                                                <strong>{s.intersection_name}</strong><br/>
-                                                Status: {s.current_state}<br/>
-                                                Priority Mode: {s.priority_status ? '🟢 GREEN CORRIDOR ACTIVE' : '⚪ NORMAL'}
-                                            </div>
-                                        </Popup>
-                                    </CircleMarker>
-                                );
-                            })}
-
-                            {/* Hospitals */}
-                            {hospitals.map(h => (
-                                <Marker
-                                    key={`hosp-${h.id}`}
-                                    position={[h.latitude, h.longitude]}
-                                    icon={h.status === 'FULL' ? hospitalFullIcon : hospitalIcon}
-                                >
-                                    <Popup>
-                                        <div className="text-xs text-slate-900">
-                                            <strong className="text-sm">{h.name}</strong><br/>
-                                            Status: <span className={h.status === 'AVAILABLE' ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>{h.status}</span><br/>
-                                            Available ICU: <strong>{h.available_icu}</strong> / {h.icu_beds}<br/>
-                                            Emergency Capacity: <strong>{h.available_emergency_capacity}</strong>
+                                        <div 
+                                            className={`${h.status === 'FULL' ? 'bg-amber-600 border-amber-300' : 'bg-emerald-600 border-emerald-200'} text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-xl border-2 text-sm cursor-pointer hover:scale-125 transition-transform duration-200`}
+                                            aria-label={`Hospital: ${h.name}, Status: ${h.status}`}
+                                        >
+                                            🏥
                                         </div>
-                                    </Popup>
-                                </Marker>
-                            ))}
+                                        {openInfoId === `hosp-${h.id}` && (
+                                            <InfoWindow
+                                                position={{ lat: h.latitude, lng: h.longitude }}
+                                                onCloseClick={() => setOpenInfoId(null)}
+                                            >
+                                                <div className="text-xs text-slate-900 p-1">
+                                                    <strong className="text-sm">{h.name}</strong><br/>
+                                                    Status: <span className={h.status === 'AVAILABLE' ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}>{h.status}</span><br/>
+                                                    Available ICU: <strong>{h.available_icu}</strong> / {h.icu_beds}<br/>
+                                                    Emergency Capacity: <strong>{h.available_emergency_capacity}</strong>
+                                                </div>
+                                            </InfoWindow>
+                                        )}
+                                    </AdvancedMarker>
+                                ))}
 
-                            {/* Ambulances */}
-                            {ambulances.map(a => (
-                                <Marker
-                                    key={`amb-${a.id}`}
-                                    position={[a.latitude, a.longitude]}
-                                    icon={a.status === 'EN_ROUTE' ? ambulanceIcon : ambulanceIdleIcon}
-                                >
-                                    <Popup>
-                                        <div className="text-xs text-slate-900">
-                                            <strong>Ambulance: {a.vehicle_number}</strong><br/>
-                                            Status: <span className="font-bold text-cyan-600">{a.status}</span><br/>
-                                            Priority: {a.emergency_priority}<br/>
-                                            Speed: {a.speed ? `${a.speed} km/h` : '48 km/h'}<br/>
-                                            Live ETA: {a.current_eta ? `${a.current_eta.toFixed(1)} min` : 'N/A'}
+                                {/* Ambulances */}
+                                {ambulances.map(a => (
+                                    <AdvancedMarker
+                                        key={`amb-${a.id}`}
+                                        position={{ lat: a.latitude, lng: a.longitude }}
+                                        onClick={() => setOpenInfoId(openInfoId === `amb-${a.id}` ? null : `amb-${a.id}`)}
+                                    >
+                                        <div 
+                                            className={`${a.status === 'EN_ROUTE' ? 'bg-cyan-500 animate-pulse border-cyan-200' : 'bg-slate-700 border-slate-500'} text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-xl border-2 text-sm cursor-pointer hover:scale-125 transition-transform duration-200`}
+                                            aria-label={`Ambulance ${a.vehicle_number}: ${a.status}`}
+                                        >
+                                            🚑
                                         </div>
-                                    </Popup>
-                                </Marker>
-                            ))}
+                                        {openInfoId === `amb-${a.id}` && (
+                                            <InfoWindow
+                                                position={{ lat: a.latitude, lng: a.longitude }}
+                                                onCloseClick={() => setOpenInfoId(null)}
+                                            >
+                                                <div className="text-xs text-slate-900 p-1">
+                                                    <strong>Ambulance: {a.vehicle_number}</strong><br/>
+                                                    Status: <span className="font-bold text-cyan-600">{a.status}</span><br/>
+                                                    Priority: {a.emergency_priority}<br/>
+                                                    Speed: {a.speed ? `${a.speed} km/h` : '48 km/h'}<br/>
+                                                    Live ETA: {a.current_eta ? `${a.current_eta.toFixed(1)} min` : 'N/A'}
+                                                </div>
+                                            </InfoWindow>
+                                        )}
+                                    </AdvancedMarker>
+                                ))}
 
-                            {/* Incidents */}
-                            {incidents.map(i => (
-                                <Marker
-                                    key={`inc-${i.id}`}
-                                    position={[i.latitude, i.longitude]}
-                                    icon={i.type === 'ROAD_BLOCK' ? incidentBlockIcon : incidentAccidentIcon}
-                                >
-                                    <Popup>
-                                        <div className="text-xs text-slate-900">
-                                            <strong className="text-rose-600">{i.type}</strong><br/>
-                                            Severity: <strong>{i.severity}</strong><br/>
-                                            {i.description}
+                                {/* Incidents */}
+                                {incidents.map(i => (
+                                    <AdvancedMarker
+                                        key={`inc-${i.id}`}
+                                        position={{ lat: i.latitude, lng: i.longitude }}
+                                        onClick={() => setOpenInfoId(openInfoId === `inc-${i.id}` ? null : `inc-${i.id}`)}
+                                    >
+                                        <div 
+                                            className={`${i.type === 'ROAD_BLOCK' ? 'bg-orange-600 animate-pulse border-orange-300' : 'bg-rose-600 animate-bounce border-rose-300'} text-white rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-xl border-2 text-sm cursor-pointer hover:scale-125 transition-transform duration-200`}
+                                            aria-label={`Incident: ${i.type}, Severity: ${i.severity}`}
+                                        >
+                                            {i.type === 'ROAD_BLOCK' ? '🚧' : '💥'}
                                         </div>
-                                    </Popup>
-                                </Marker>
-                            ))}
-                        </MapContainer>
+                                        {openInfoId === `inc-${i.id}` && (
+                                            <InfoWindow
+                                                position={{ lat: i.latitude, lng: i.longitude }}
+                                                onCloseClick={() => setOpenInfoId(null)}
+                                            >
+                                                <div className="text-xs text-slate-900 p-1">
+                                                    <strong className="text-rose-600">{i.type}</strong><br/>
+                                                    Severity: <strong>{i.severity}</strong><br/>
+                                                    {i.description}
+                                                </div>
+                                            </InfoWindow>
+                                        )}
+                                    </AdvancedMarker>
+                                ))}
+                            </Map>
+                        </APIProvider>
 
                         {/* Map Overlay Legend */}
                         <div className="absolute bottom-3 left-3 z-[1000] bg-slate-900/90 backdrop-blur-md p-2.5 rounded-lg border border-slate-800 text-[10px] text-slate-300 shadow-xl space-y-1">
