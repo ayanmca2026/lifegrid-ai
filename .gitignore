@@ -1,20 +1,28 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-*.db
-*.sqlite
-*.sqlite3
-
+# Node
+node_modules/
+frontend/node_modules/
+dist/
 frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-.env
-.env.*
-!.env.example
-
-.venv/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
 venv/
 ENV/
+backend/venv/
+*.db
+*.sqlite3
 
-node_modules/
+# Environment & IDE
+.env
+.env.local
+.vscode/
+.idea/
+.DS_Store
