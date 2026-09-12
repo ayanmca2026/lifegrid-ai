@@ -22,7 +22,7 @@ In medical emergencies, conventional GPS navigation tools only suggest static or
 ## 2. Architecture & Tech Stack
 
 ```text
-       React + Vite + Leaflet Command Center (Port 3000)
+       React + Vite + Google Maps Command Center (Port 3000)
                               ↕ [HTTP / WebSocket]
                FastAPI Central Orchestrator (Port 8000)
     ┌─────────────────────────┼─────────────────────────┐
@@ -32,11 +32,12 @@ PostgreSQL DB          A* Routing & ML           Simulator Engine
  Signals, Incidents)    Traffic Prediction)       Incidents, Signals)
 ```
 
-- **Frontend:** React 18, Vite, Tailwind CSS, React-Leaflet, CartoDB Dark Maps
+- **Frontend:** React 18, Vite, Tailwind CSS, Google Maps Platform (`@vis.gl/react-google-maps`), Custom Dark Theme
 - **Backend:** FastAPI, Python 3.10+, SQLAlchemy, Pydantic v2, WebSockets
 - **Database:** PostgreSQL (with SQLite fallback for local developer testing)
 - **AI & Algorithms:** A\* Graph Search, Multi-Criteria Decision Analysis (MCDA) for Hospital Selection, Heuristic ETA Regression
 - **DevOps:** Docker, Docker Compose, Pytest
+- **Cloud/Deployment:** Vercel (Frontend SPA), Render (Backend + Database)
 
 ---
 
@@ -113,7 +114,18 @@ The platform uses a unified, low-latency WebSocket connection:
 
 ---
 
-## 6. Running with Docker Compose (Recommended)
+## 6. Google Maps API Key Setup
+
+This project uses the **Google Maps JavaScript API** to render the interactive command center map.
+Before running the frontend locally or deploying, you **must** configure a valid API key:
+
+1. Follow the instructions in [docs/GOOGLE_MAPS_SETUP.md](./docs/GOOGLE_MAPS_SETUP.md) to generate a key.
+2. In the `frontend/` directory, copy `.env.example` to `.env`.
+3. Set your key: `VITE_GOOGLE_MAPS_API_KEY=your_api_key_here`.
+
+---
+
+## 7. Running with Docker Compose (Recommended)
 
 To start the full stack:
 ```bash
@@ -128,7 +140,7 @@ Services:
 
 ---
 
-## 7. Running Locally (Alternative)
+## 8. Running Locally (Alternative)
 
 ### Backend
 ```bash
@@ -152,7 +164,7 @@ npm run dev
 
 ---
 
-## 8. SIH Demonstration Walkthrough
+## 9. SIH Demonstration Walkthrough
 
 1. Open `http://localhost:3000` to access the Command Center.
 2. Verify all indicators show **SYSTEM ONLINE** and **WEBSOCKET LIVE**.
@@ -172,6 +184,6 @@ npm run dev
 
 ---
 
-## 9. Prototype & Ethical Disclaimer
+## 10. Prototype & Ethical Disclaimer
 
 *LIFEGRID AI is a prototype designed for demonstration purposes at the Smart India Hackathon (SIH). Traffic simulation data, signal priority states, and congestion metrics are generated synthetically for demo cities. This system represents an architectural simulation and decision-support recommendation layer; it does not directly control municipal or governmental physical traffic signals.*
