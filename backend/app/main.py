@@ -22,6 +22,21 @@ from app.services.simulation_runner import start_internal_simulator
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Auto-seed database if empty
+    try:
+        from app.database.connection import SessionLocal
+        from app.models.hospital import Hospital
+        db = SessionLocal()
+        try:
+            if db.query(Hospital).count() == 0:
+                print("LIFEGRID AI: Initializing and seeding demo database...")
+                from app.database.seed import seed_data
+                seed_data()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Auto-seed exception: {e}")
+
     start_internal_simulator()
     yield
 
