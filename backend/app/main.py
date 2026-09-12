@@ -17,10 +17,18 @@ from app.api.routes import (
 )
 from app.api.websocket import router as websocket_router
 
+from contextlib import asynccontextmanager
+from app.services.simulation_runner import start_internal_simulator
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_internal_simulator()
+    yield
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="LIFEGRID AI API")
+app = FastAPI(title="LIFEGRID AI API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
