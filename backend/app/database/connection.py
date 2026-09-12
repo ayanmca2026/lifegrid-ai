@@ -9,10 +9,22 @@ elif db_url.startswith("http://") or db_url.startswith("https://"):
     print(f"WARNING: DATABASE_URL is set to an HTTP(S) URL ('{db_url}'). It must be a PostgreSQL connection string (postgresql://...). Falling back to SQLite.")
     db_url = "sqlite:///./lifegrid.db"
 
-engine = create_engine(
-    db_url, 
-    connect_args={"check_same_thread": False} if "sqlite" in db_url else {}
-)
+try:
+    engine = create_engine(
+        db_url, 
+        connect_args={"check_same_thread": False} if "sqlite" in db_url else {}
+    )
+    if "sqlite" not in db_url:
+        with engine.connect() as conn:
+            pass
+except Exception as e:
+    print(f"WARNING: Database connection failed for '{db_url}': {e}. Falling back to SQLite.")
+    db_url = "sqlite:///./lifegrid.db"
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False}
+    )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
